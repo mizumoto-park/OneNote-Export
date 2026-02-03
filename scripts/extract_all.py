@@ -93,7 +93,7 @@ def sanitize_filename(name):
         return "untitled"
     # Replace problematic characters
     name = re.sub(r'[<>:"/\\|?*]', '_', name)
-    name = re.sub(r'\s+', ' ', name).strip()
+    name = re.sub(r'\s+', '_', name).strip()
     name = name.strip('.')
     if not name:
         return "untitled"
