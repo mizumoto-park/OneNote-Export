@@ -13,5 +13,5 @@ wheels/
 .DS_Store
 
 # 匯出的個人筆記資料（不進版控）
-exported/
+exported_md/
 exported_pdf/

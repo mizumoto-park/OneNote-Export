@@ -28,7 +28,7 @@ weasyprint = None
 # === Configuration ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
-EXPORTED_DIR = os.path.join(PROJECT_DIR, "exported")
+EXPORTED_DIR = os.path.join(PROJECT_DIR, "exported_md")
 
 ONENOTE_BASE = os.path.expanduser(
     "~/Library/Containers/com.microsoft.onenote.mac/Data/Library/"

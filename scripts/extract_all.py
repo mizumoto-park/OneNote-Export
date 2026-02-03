@@ -30,7 +30,7 @@ ONENOTE_BASE = os.path.expanduser(
 )
 CACHE_DIR = os.path.join(ONENOTE_BASE, "cache")
 DB_DIR = os.path.join(ONENOTE_BASE, "FullTextSearchIndex")
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exported")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exported_md")
 
 # Notebook databases
 NOTEBOOKS = [
