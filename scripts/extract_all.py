@@ -438,15 +438,6 @@ def _write_markdown(md_path, page, image_files, embedded_pngs, title):
             lines.append(f"![image]({img_path})")
             lines.append("")
 
-    # Image alt-texts from FTSI
-    if page['image_alts']:
-        lines.append("## Image Descriptions (OCR/Alt-text)")
-        lines.append("")
-        for alt in page['image_alts']:
-            if alt and alt.strip():
-                lines.append(f"- {alt.strip()[:500]}")
-        lines.append("")
-
     # File attachments
     if page['file_names']:
         lines.append("## Attachments")
