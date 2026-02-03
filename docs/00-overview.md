@@ -1,88 +1,88 @@
-# OneNote macOS 本機快取結構總覽
+# OneNote macOS Local Cache Structure Overview
 
-## 背景
+## Background
 
-OneNote for Mac 將所有筆記本資料快取在本機的 sandboxed container 中。即使雲端帳號已登出或同步中斷，本機快取仍然保留完整的筆記內容、圖片、附件。本文件記錄如何從這些快取中還原完整的筆記。
+OneNote for Mac caches all notebook data locally within a sandboxed container. Even if the cloud account is signed out or sync is interrupted, the local cache retains complete note content, images, and attachments. This document describes how to recover complete notes from this cache.
 
-## 快取根目錄
+## Cache Root Directory
 
 ```
 ~/Library/Containers/com.microsoft.onenote.mac/
 └── Data/Library/Application Support/Microsoft User Data/OneNote/
-    ├── 15.0/                    ← 目前使用中的資料
-    ├── 15.0-ori/                ← 原始備份 (4 items)
-    └── 15.0-restore/            ← 還原備份 (9 items)
+    ├── 15.0/                    ← Currently active data
+    ├── 15.0-ori/                ← Original backup (4 items)
+    └── 15.0-restore/            ← Restore backup (9 items)
 ```
 
-## 15.0/ 主要子目錄
+## 15.0/ Main Subdirectories
 
 ```
 15.0/
-├── cache/                       ← 核心：所有筆記頁面 + 圖片的二進位快取
-│   ├── header                   ← 72 bytes，快取 metadata
-│   ├── 00000000.bin             ← 配置表 (Allocation Table)
-│   ├── 00000001.bin             ← 物件目錄 (Object Directory)
-│   ├── 00000002.bin ~ ...       ← 筆記頁面 + 圖片，共 2,039 個 .bin 檔
+├── cache/                       ← Core: binary cache for all note pages + images
+│   ├── header                   ← 72 bytes, cache metadata
+│   ├── 00000000.bin             ← Allocation Table
+│   ├── 00000001.bin             ← Object Directory
+│   ├── 00000002.bin ~ ...       ← Note pages + images, 2,039 .bin files total
 │   └── (total: 740 MB)
 │
-├── FullTextSearchIndex/         ← 全文搜尋索引 SQLite 資料庫
-│   ├── {GUID}{N}.db             ← 每個筆記本一個 DB，共 5 個
-│   └── MasterIndex/Master.db    ← 索引版本追蹤 (可能不存在)
+├── FullTextSearchIndex/         ← Full-text search index SQLite databases
+│   ├── {GUID}{N}.db             ← One DB per notebook, 5 total
+│   └── MasterIndex/Master.db    ← Index version tracking (may not exist)
 │
-├── AccessibilityCheckerIndex/   ← 無障礙檢查索引
-│   └── {GUID}{N}.db             ← 每個筆記本一個 DB，共 5 個
+├── AccessibilityCheckerIndex/   ← Accessibility checker index
+│   └── {GUID}{N}.db             ← One DB per notebook, 5 total
 │
-├── ServerListings/              ← 伺服器連線快取 (.onesrvcache)
-├── Preferences.dat              ← 標籤定義 (To Do, Important 等)
-└── (其他: telemetry, UI state)
+├── ServerListings/              ← Server connection cache (.onesrvcache)
+├── Preferences.dat              ← Tag definitions (To Do, Important, etc.)
+└── (other: telemetry, UI state)
 ```
 
-## 資料關係概觀
+## Data Relationship Overview
 
 ```
 ┌──────────────────────────┐
-│   FTSI SQLite 資料庫      │  ← 結構化資料：階層、文字、搜尋索引
+│   FTSI SQLite Databases   │  ← Structured data: hierarchy, text, search index
 │   (FullTextSearchIndex)   │
 │                          │
-│  Entities 表 ──────────┐ │
-│  (Notebook/Section/Page)│ │
-│          │              │ │
-│          ▼              │ │
-│  PageElements 表        │ │
-│  (文字/圖片alt/附件名)   │ │
+│  Entities table ────────┐│
+│  (Notebook/Section/Page)││
+│          │              ││
+│          ▼              ││
+│  PageElements table     ││
+│  (text/image alt/files) ││
 └──────────┬───────────────┘
-           │ GUID 位元組匹配
+           │ GUID byte matching
            ▼
 ┌──────────────────────────┐
-│   Cache .bin 快取檔案     │  ← 二進位資料：頁面內容、嵌入圖片、附件
+│   Cache .bin Files        │  ← Binary data: page content, embedded images, attachments
 │                          │
 │  Page Data (.bin)        │
-│  ├── UTF-16LE 文字內容    │
-│  ├── GUID/GOID 參照      │
-│  └── 小型嵌入 PNG 圖示    │
+│  ├── UTF-16LE text       │
+│  ├── GUID/GOID refs      │
+│  └── Small embedded PNGs │
 │                          │
 │  Image Files (.bin)      │
-│  ├── PNG / JPEG / GIF    │  ← 緊接在 Page Data 之後（循序配置）
-│  └── PDF / ZIP 附件      │
+│  ├── PNG / JPEG / GIF    │  ← Immediately after Page Data (sequential allocation)
+│  └── PDF / ZIP attachments│
 └──────────────────────────┘
 ```
 
-## 五本筆記本概覽
+## Five Notebooks Overview
 
-| 筆記本 | 頁數 | 節數 | FTSI DB 大小 | 圖片數 (FTSI) | 附件數 |
-|--------|------|------|-------------|--------------|--------|
+| Notebook | Pages | Sections | FTSI DB Size | Images (FTSI) | Attachments |
+|----------|-------|----------|-------------|---------------|-------------|
 | Work | 413 | 22 | 7,984 KB | 424 | 27 |
 | Personal | 160 | 30 | 3,100 KB | 431 | 8 |
 | Evernote | 5 | 1 | 216 KB | — | — |
-| Morton Rainey 的筆記本 | 8 | 2 | 352 KB | — | — |
+| Morton Rainey's Notebook | 8 | 2 | 352 KB | — | — |
 | 7rendMicro | 1 | 1 | 164 KB | — | — |
-| **合計** | **587** | **56** | | | |
+| **Total** | **587** | **56** | | | |
 
-## 相關文件
+## Related Documents
 
-- [01-directory-structure.md](01-directory-structure.md) — 完整目錄結構
-- [02-ftsi-database-schema.md](02-ftsi-database-schema.md) — FTSI 資料庫 Schema
-- [03-cache-bin-format.md](03-cache-bin-format.md) — Cache .bin 檔案格式
-- [04-guid-matching.md](04-guid-matching.md) — GUID 位元組匹配機制
-- [05-sequential-allocation.md](05-sequential-allocation.md) — 循序配置與圖片歸屬
-- [06-recovery-methodology.md](06-recovery-methodology.md) — 完整還原方法論
+- [01-directory-structure.md](01-directory-structure.md) — Full directory structure
+- [02-ftsi-database-schema.md](02-ftsi-database-schema.md) — FTSI database schema
+- [03-cache-bin-format.md](03-cache-bin-format.md) — Cache .bin file format
+- [04-guid-matching.md](04-guid-matching.md) — GUID byte matching mechanism
+- [05-sequential-allocation.md](05-sequential-allocation.md) — Sequential allocation and image attribution
+- [06-recovery-methodology.md](06-recovery-methodology.md) — Complete recovery methodology

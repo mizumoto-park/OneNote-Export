@@ -1,146 +1,146 @@
-# Cache .bin 檔案格式
+# Cache .bin File Format
 
-## 概述
+## Overview
 
-OneNote 的 cache 目錄包含所有筆記頁面和媒體的二進位快取。檔案使用 base-36 循序命名（`00000000.bin` ~ `0000069L.bin`），共 2,039 個檔案，總計 740 MB。
+OneNote's cache directory contains binary caches of all note pages and media. Files use base-36 sequential naming (`00000000.bin` ~ `0000069L.bin`), totaling 2,039 files and 740 MB.
 
-## 檔案分類
+## File Classification
 
-透過 magic bytes（檔案開頭的特徵位元組）可以將 .bin 檔分為兩大類：
+Files can be classified into two categories using magic bytes (file header signatures):
 
-### IMAGE 類型 (1,313 個)
+### IMAGE Type (1,313 files)
 
-| 格式 | Magic Bytes | 數量 | 說明 |
-|------|-------------|------|------|
-| PNG | `89 50 4E 47` | 1,041 | 螢幕截圖、圖表、照片 |
-| JPEG | `FF D8 FF` | 214 | 照片、掃描文件 |
-| GIF | `47 49 46 38` | 32 | 動畫 GIF |
-| PDF | `25 50 44 46` | 16 | 嵌入的 PDF 文件 |
-| ZIP | `50 4B 03 04` | 10 | 壓縮檔附件 |
+| Format | Magic Bytes | Count | Description |
+|--------|-------------|-------|-------------|
+| PNG | `89 50 4E 47` | 1,041 | Screenshots, charts, photos |
+| JPEG | `FF D8 FF` | 214 | Photos, scanned documents |
+| GIF | `47 49 46 38` | 32 | Animated GIFs |
+| PDF | `25 50 44 46` | 16 | Embedded PDF documents |
+| ZIP | `50 4B 03 04` | 10 | Compressed file attachments |
 
-這些檔案可以直接改副檔名後開啟，內容完整。
+These files can be opened directly after changing the file extension. Content is complete.
 
-### DATA 類型 (726 個)
+### DATA Type (726 files)
 
-不以已知 magic bytes 開頭的檔案，屬於 OneNote 私有格式：
+Files that don't start with known magic bytes belong to OneNote's proprietary format:
 
-| 子類型 | 識別方式 | 數量 | 說明 |
-|--------|----------|------|------|
-| Page Data | 包含 `PageTitle` UTF-16LE 標記 | 592 | 筆記頁面的完整內容 |
-| Section Store | 大型 (>1MB) | 少量 | Section 級修訂存放區 |
-| Index/Allocation | 前 3 個特殊檔案 | 3 | 配置表、物件目錄 |
-| Other Data | 介於頁面之間的小檔案 | ~131 | 修訂元資料、其他 |
+| Subtype | Identification | Count | Description |
+|---------|---------------|-------|-------------|
+| Page Data | Contains `PageTitle` UTF-16LE marker | 592 | Complete content of note pages |
+| Section Store | Large (>1MB) | Few | Section-level revision store |
+| Index/Allocation | First 3 special files | 3 | Allocation table, object directory |
+| Other Data | Small files between pages | ~131 | Revision metadata, etc. |
 
 ---
 
-## 特殊檔案詳解
+## Special Files Detail
 
 ### header (72 bytes)
 
-快取的元資料檔案，不是 .bin 格式。包含版本號和計數器。
+Cache metadata file, not in .bin format. Contains version number and counters.
 
-### 00000000.bin — 配置表 (Allocation Table)
+### 00000000.bin — Allocation Table
 
-- 大小：約 380 KB
-- 追蹤已使用的 file ID
-- 包含部分圖片 file ID 的參照
-- 在我們的分析中找到 359 個圖片 file ID
+- Size: ~380 KB
+- Tracks used file IDs
+- Contains references to some image file IDs
+- 359 image file IDs found in our analysis
 
-### 00000001.bin — 物件目錄 (Object Directory)
+### 00000001.bin — Object Directory
 
-- 大小：約 380 KB
-- **GUID → file ID 的映射表**
-- 以 mixed-endian GUID 位元組儲存
-- 在我們的分析中找到 342 個圖片 file ID
-- 部分映射已過時（不包含所有現存圖片）
+- Size: ~380 KB
+- **GUID → file ID mapping table**
+- Stores GUIDs in mixed-endian byte format
+- 342 image file IDs found in our analysis
+- Some mappings are stale (doesn't include all existing images)
 
-### 00000002.bin — Section-level 修訂存放區
+### 00000002.bin — Section-level Revision Store
 
-- 大小：約 1.9 MB
-- 包含 **所有頁面的標題和 GUID**（UTF-16LE 編碼）
-- 類似於 OneNote 的 Table of Contents
-- 可用來確認頁面清單的完整性
+- Size: ~1.9 MB
+- Contains **all page titles and GUIDs** (UTF-16LE encoded)
+- Similar to a OneNote Table of Contents
+- Can be used to verify completeness of the page list
 
 ---
 
-## Page Data 檔案結構
+## Page Data File Structure
 
-Page Data 是 OneNote 的 MS-ONESTORE 格式的簡化版本。主要特徵：
+Page Data uses a simplified version of the MS-ONESTORE format. Key characteristics:
 
-### 識別方式
+### Identification
 
-- 檔案大小 ≥ 4,096 bytes
-- 包含 UTF-16LE 編碼的 `PageTitle` 字串
+- File size >= 4,096 bytes
+- Contains the UTF-16LE encoded string `PageTitle`
 
-### 內容結構
+### Content Structure
 
 ```
 ┌─────────────────────────────────────┐
-│  Header / Revision metadata          │  固定結構，包含版本資訊
+│  Header / Revision metadata          │  Fixed structure, contains version info
 ├─────────────────────────────────────┤
-│  GUID / GOID 參照區                  │  頁面本身和關聯物件的 GUID
-│  ├── 頁面 GUID (mixed-endian)        │
-│  ├── 節 GUID                         │
-│  └── 圖片/附件 GOID                  │
+│  GUID / GOID reference area         │  GUIDs of the page and associated objects
+│  ├── Page GUID (mixed-endian)        │
+│  ├── Section GUID                    │
+│  └── Image/attachment GOIDs          │
 ├─────────────────────────────────────┤
-│  文字內容 (UTF-16LE)                 │
-│  ├── "PageTitle"                     │  標記
-│  ├── 頁面標題                        │
-│  ├── "Calibri" / "Calibri Light"     │  字型名稱
-│  ├── "PageDateTime"                  │  標記
-│  ├── 內容段落                        │
-│  └── 表格資料                        │
+│  Text content (UTF-16LE)             │
+│  ├── "PageTitle"                     │  Marker
+│  ├── Page title                      │
+│  ├── "Calibri" / "Calibri Light"     │  Font names
+│  ├── "PageDateTime"                  │  Marker
+│  ├── Content paragraphs              │
+│  └── Table data                      │
 ├─────────────────────────────────────┤
-│  嵌入小型 PNG (可選)                  │
-│  ├── 40x40 圖示                      │  UI 相關小圖
-│  └── 80x80 圖示                      │
+│  Embedded small PNGs (optional)      │
+│  ├── 40x40 icons                     │  UI-related small images
+│  └── 80x80 icons                     │
 ├─────────────────────────────────────┤
-│  CID 參照 (可選)                     │
-│  ├── "cidimage008.png@01D4835C..."   │  Content-ID 格式的圖片參照
-│  └── "Untitled picture.png"          │  內部圖片檔名
+│  CID references (optional)           │
+│  ├── "cidimage008.png@01D4835C..."   │  Content-ID format image refs
+│  └── "Untitled picture.png"          │  Internal image filename
 ├─────────────────────────────────────┤
-│  原始檔案路徑 (可選)                  │
-│  └── "C:\Users\morton_rainey\..."      │  剪貼來源路徑
+│  Original file paths (optional)      │
+│  └── "C:\Users\morton_rainey\..."    │  Clipboard source path
 └─────────────────────────────────────┘
 ```
 
-### 大小分佈
+### Size Distribution
 
-| 大小範圍 | 數量 | 佔比 |
-|----------|------|------|
+| Size Range | Count | Percentage |
+|------------|-------|------------|
 | 4 - 16 KB | 221 | 37% |
 | 16 - 64 KB | 218 | 37% |
 | 64 - 256 KB | 256 | 24% |
 | > 256 KB | 23 | 2% |
 
-### 嵌入 PNG
+### Embedded PNGs
 
-部分頁面檔案內嵌小型 PNG 圖示（通常 40x40 或 80x80 像素），可透過搜尋 PNG signature (`89 50 4E 47 0D 0A 1A 0A`) 和 IEND marker (`49 45 4E 44 AE 42 60 82`) 來提取。
+Some page files contain small embedded PNG icons (typically 40x40 or 80x80 pixels), which can be extracted by searching for the PNG signature (`89 50 4E 47 0D 0A 1A 0A`) and IEND marker (`49 45 4E 44 AE 42 60 82`).
 
-**注意**：大型圖片不會嵌入在頁面檔案中，而是作為獨立的 .bin 檔案儲存。
+**Note**: Large images are not embedded in page files — they are stored as separate .bin files.
 
 ---
 
-## IMAGE 檔案
+## IMAGE Files
 
-圖片檔案就是標準的影像格式，直接存為 .bin 副檔名。
+Image files are standard image formats stored with a .bin extension.
 
-### PNG 尺寸範例
+### Common PNG Dimensions
 
-從實際快取中觀察到的常見尺寸：
+Observed from the actual cache:
 
 ```
-40x40     ← 小圖示 (嵌入在 page data 中)
-80x80     ← 小圖示 (嵌入在 page data 中)
-449x320   ← 縮圖
-681x340   ← 中型圖表
-730x329   ← 中型圖表
-1024x543  ← 螢幕截圖
-1917x1016 ← 全螢幕截圖
-1920x1022 ← 全螢幕截圖
+40x40     ← Small icons (embedded in page data)
+80x80     ← Small icons (embedded in page data)
+449x320   ← Thumbnails
+681x340   ← Medium charts
+730x329   ← Medium charts
+1024x543  ← Screenshots
+1917x1016 ← Full-screen screenshots
+1920x1022 ← Full-screen screenshots
 ```
 
-### 確認方式
+### Verification
 
 ```python
 import struct

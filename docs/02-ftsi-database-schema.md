@@ -1,31 +1,31 @@
-# FTSI 資料庫 Schema (FullTextSearchIndex)
+# FTSI Database Schema (FullTextSearchIndex)
 
-## 概述
+## Overview
 
-每個筆記本對應一個獨立的 SQLite 資料庫，位於：
+Each notebook corresponds to an independent SQLite database located at:
 ```
 15.0/FullTextSearchIndex/{NotebookGOID}.db
 ```
 
-資料庫的 GOID 即為該筆記本在 OneNote 中的 Global Object ID。
+The database GOID is the notebook's Global Object ID in OneNote.
 
-## 資料表一覽
+## Table Summary
 
-| 表名 | 類型 | 說明 | 範例行數 (Work) |
-|------|------|------|-----------------|
-| `Entities` | 一般表 | 筆記本/節/頁面的階層結構 | 436 |
-| `PageElements` | 一般表 | 每個頁面的內容元素 | 26,373 |
-| `Hashtags` | 一般表 | 標籤 (#tag) 索引 | 986 |
-| `NoteFlags` | 一般表 | 待辦事項/旗標 | 34 |
-| `Metadata` | 一般表 | Schema 版本 | 1 |
-| `EntityContents` | FTS4 虛擬表 | 全文搜尋：實體標題 | 436 |
-| `PageElementContents` | FTS4 虛擬表 | 全文搜尋：頁面內容 | 26,373 |
-| `HashtagContents` | FTS4 虛擬表 | 全文搜尋：標籤 | 986 |
-| `NoteFlagContents` | FTS4 虛擬表 | 全文搜尋：旗標 | 34 |
+| Table | Type | Description | Example Row Count (Work) |
+|-------|------|-------------|--------------------------|
+| `Entities` | Regular | Notebook/Section/Page hierarchy | 436 |
+| `PageElements` | Regular | Content elements for each page | 26,373 |
+| `Hashtags` | Regular | Hashtag (#tag) index | 986 |
+| `NoteFlags` | Regular | To-do items / flags | 34 |
+| `Metadata` | Regular | Schema version | 1 |
+| `EntityContents` | FTS4 Virtual | Full-text search: entity titles | 436 |
+| `PageElementContents` | FTS4 Virtual | Full-text search: page content | 26,373 |
+| `HashtagContents` | FTS4 Virtual | Full-text search: hashtags | 986 |
+| `NoteFlagContents` | FTS4 Virtual | Full-text search: flags | 34 |
 
 ---
 
-## Entities 表
+## Entities Table
 
 ### Schema
 
@@ -48,37 +48,37 @@ CREATE TABLE Entities (
 );
 ```
 
-### Type 欄位定義
+### Type Field Definition
 
-| Type 值 | 意義 | 說明 |
-|---------|------|------|
-| 1 | **Page** (頁面) | 最末端的內容單位 |
-| 2 | **Section** (節) | 頁面的容器，對應 OneNote 的「節」 |
-| 4 | **Notebook** (筆記本) | 最上層，每個 DB 只有一個 |
+| Type Value | Meaning | Description |
+|------------|---------|-------------|
+| 1 | **Page** | The leaf-level content unit |
+| 2 | **Section** | Container for pages, corresponds to a OneNote "section" |
+| 4 | **Notebook** | Top level, one per database |
 
-### GOID 格式
+### GOID Format
 
-GOID (Global Object ID) 格式為 `{GUID}{序號}`：
+GOID (Global Object ID) format is `{GUID}{sequence}`:
 
 ```
-筆記本: {3DBD86EA-D2F6-7343-AC97-863B47D29236}{19}
-  節:   {4AEDE97C-6F42-6F4D-82E1-AF5A6E34A06D}{15}
-  頁面: {8D8463AD-4DFE-1644-B754-00D458F87468}{10}
+Notebook: {3DBD86EA-D2F6-7343-AC97-863B47D29236}{19}
+  Section: {4AEDE97C-6F42-6F4D-82E1-AF5A6E34A06D}{15}
+    Page:  {8D8463AD-4DFE-1644-B754-00D458F87468}{10}
 ```
 
-### 階層關係
+### Hierarchy Relationship
 
-透過 `ParentGOID` 建立三層階層：
+A three-level hierarchy is established through `ParentGOID`:
 
 ```
 Notebook (Type=4)
   └── ParentGOID = NULL
       │
       ├── Section (Type=2)
-      │   └── ParentGOID = Notebook 的 GOID
+      │   └── ParentGOID = Notebook's GOID
       │       │
       │       ├── Page (Type=1)
-      │       │   └── ParentGOID = Section 的 GOID
+      │       │   └── ParentGOID = Section's GOID
       │       ├── Page (Type=1)
       │       └── ...
       │
@@ -86,31 +86,31 @@ Notebook (Type=4)
       └── ...
 ```
 
-### GUID 欄位
+### GUID Field
 
-每個 Entity 有獨立的 GUID，格式為標準 UUID：
+Each Entity has a unique GUID in standard UUID format:
 ```
 {1BDE8095-99F1-44A0-8B67-0438D3A02923}
 ```
 
-**這個 GUID 是連結 FTSI 與 cache .bin 檔案的關鍵**。它會以 mixed-endian 位元組形式嵌入在對應的 page .bin 檔案中。
+**This GUID is the key link between FTSI and cache .bin files.** It is embedded in the corresponding page .bin file in mixed-endian byte format.
 
-### ContentRID 欄位
+### ContentRID Field
 
-Content Revision ID，格式也是 GOID：
+Content Revision ID, also in GOID format:
 ```
 {A267CCBF-9567-D6E2-29EC-C07EE63FC0CE}{1}
 ```
-代表頁面內容的修訂版本。
+Represents the content revision version of the page.
 
 ### LastModifiedTime
 
-Windows FILETIME 格式（100 奈秒為單位，從 1601-01-01 起算）：
+Windows FILETIME format (100-nanosecond intervals since 1601-01-01):
 ```
-132531880040000000  →  約 2020 年
+132531880040000000  →  approximately 2020
 ```
 
-### 範例資料
+### Example Data
 
 ```
 Type=4 (Notebook):
@@ -131,7 +131,7 @@ Type=1 (Page):
 
 ---
 
-## PageElements 表
+## PageElements Table
 
 ### Schema
 
@@ -144,19 +144,19 @@ CREATE TABLE PageElements (
 );
 ```
 
-### Jcid 類型定義
+### Jcid Type Definition
 
-| Jcid 值 | 意義 | 範例行數 (Work) | 說明 |
-|---------|------|-----------------|------|
-| 393230 | **文字內容** | 25,922 | 段落、表格儲存格、標題等純文字 |
-| 393233 | **圖片 (alt-text)** | 424 | 圖片的替代文字 / OCR 辨識文字 |
-| 393269 | **檔案附件** | 27 | 嵌入檔案的原始檔名 |
+| Jcid Value | Meaning | Example Count (Work) | Description |
+|------------|---------|----------------------|-------------|
+| 393230 | **Text content** | 25,922 | Paragraphs, table cells, headings, etc. |
+| 393233 | **Image (alt-text)** | 424 | Image alt-text / OCR recognized text |
+| 393269 | **File attachment** | 27 | Original filename of embedded files |
 
-### EntityRowId 關聯
+### EntityRowId Association
 
-`EntityRowId` 對應 `Entities` 表的 `rowid`，用來建立「哪些元素屬於哪個頁面」的關聯。
+`EntityRowId` corresponds to the `rowid` of the `Entities` table, establishing the "which elements belong to which page" relationship.
 
-### Jcid 393230 — 文字內容
+### Jcid 393230 — Text Content
 
 ```
 GOID:        {9A7B2374-C314-9F78-86E1-B24FB8C43B61}{19}
@@ -165,9 +165,9 @@ Jcid:        393230
 EntityRowId: 781
 ```
 
-每個段落、表格儲存格都是獨立的一筆記錄。頁面標題也是一個 393230 元素。
+Each paragraph and table cell is stored as a separate record. The page title is also a 393230 element.
 
-### Jcid 393233 — 圖片 Alt-text
+### Jcid 393233 — Image Alt-text
 
 ```
 GOID:        {9A7B2374-C314-9F78-86E1-B24FB8C43B61}{84}
@@ -176,22 +176,22 @@ Jcid:        393233
 EntityRowId: 781
 ```
 
-Text 欄位儲存的是圖片的 OCR 辨識結果或使用者手動設定的替代文字。這是確認圖片內容的重要依據。
+The Text field stores the OCR recognition result or user-defined alt-text for the image. This is an important reference for confirming image content.
 
-### Jcid 393269 — 檔案附件
+### Jcid 393269 — File Attachment
 
 ```
 GOID:        {6B05D46F-45F1-F242-B1F1-D3BEBBBB7C77}{17}
 Text:        "2018 AI Contest_Contestants TWN 1122.xlsx"
 Jcid:        393269
-EntityRowId: 某頁面的 rowid
+EntityRowId: page's rowid
 ```
 
-Text 欄位儲存的是原始檔名。
+The Text field stores the original filename.
 
 ---
 
-## Hashtags 表
+## Hashtags Table
 
 ```sql
 CREATE TABLE Hashtags (
@@ -199,9 +199,9 @@ CREATE TABLE Hashtags (
 );
 ```
 
-關聯到 PageElements 的 rowid，用來標記哪些元素包含 #hashtag。
+Links to PageElements rowid to mark which elements contain #hashtags.
 
-## NoteFlags 表
+## NoteFlags Table
 
 ```sql
 CREATE TABLE NoteFlags (
@@ -212,24 +212,24 @@ CREATE TABLE NoteFlags (
 );
 ```
 
-追蹤 To Do、Important 等旗標的狀態。
+Tracks the status of To Do, Important, and other flags.
 
-## Metadata 表
+## Metadata Table
 
 ```sql
 CREATE TABLE Metadata (
     SchemaVersion INTEGER NOT NULL
 );
--- 只有 1 筆記錄，SchemaVersion = 5
+-- Only 1 record, SchemaVersion = 5
 ```
 
 ---
 
-## AccessibilityCheckerIndex (ACI) 資料庫
+## AccessibilityCheckerIndex (ACI) Database
 
-同樣每個筆記本一個 DB，Schema 如下：
+Also one DB per notebook, with the following schema:
 
-### Entities 表
+### Entities Table
 
 ```sql
 CREATE TABLE Entities (
@@ -240,9 +240,9 @@ CREATE TABLE Entities (
 );
 ```
 
-與 FTSI 的 Entities 使用相同的 GOID，但只保留基本資訊。
+Uses the same GOIDs as the FTSI Entities but only retains basic information.
 
-### Violations 表
+### Violations Table
 
 ```sql
 CREATE TABLE Violations (
@@ -255,9 +255,9 @@ CREATE TABLE Violations (
 );
 ```
 
-記錄無障礙違規項目（如缺少圖片替代文字）。Work 筆記本有 8,217 筆違規。
+Records accessibility violations (e.g., missing image alt-text). The Work notebook has 8,217 violations.
 
-### ViolationElements 表
+### ViolationElements Table
 
 ```sql
 CREATE TABLE ViolationElements (
@@ -266,4 +266,4 @@ CREATE TABLE ViolationElements (
 );
 ```
 
-將違規項目對應到具體的 GOID 元素。這個表對於找到圖片的 GOID 很有幫助——每個缺少 alt-text 的圖片都有一筆違規記錄。
+Maps violations to specific GOID elements. This table is helpful for finding image GOIDs — every image missing alt-text has a violation record.
