@@ -1,61 +1,77 @@
-# OneNote Export 工具程式
+# OneNote Export Scripts
 
-## 核心工具（保留）
+## Core Tools
 
-### `extract_all.py` — 主要還原工具 (最終版)
+### `extract_md.py` — Markdown Extractor (Final)
 
-完整的 OneNote 本機快取還原工具，整合所有步驟：
+Extracts all pages from the OneNote macOS local cache into structured Markdown files with images:
 
-1. 從 FTSI SQLite 載入 587 頁的 Notebook/Section/Page 階層
-2. 分類 2,039 個 cache .bin 檔案（IMAGE vs DATA）
-3. GUID 位元組匹配：FTSI 頁面 ↔ cache .bin（94.9% 命中率）
-4. 循序配置映射：自動歸屬 1,246 張圖片到所屬頁面
-5. 提取嵌入 PNG（>100x100）
-6. 匯出 .md + 圖片到 Notebook/Section/ 目錄
-7. 產生 index.md 目錄索引
+1. Loads 587 pages from FTSI SQLite databases (Notebook/Section/Page hierarchy)
+2. Classifies 2,039 cache .bin files (IMAGE vs DATA)
+3. GUID byte matching: FTSI pages to cache .bin files (94.9% match rate)
+4. Sequential allocation mapping: assigns 1,246 images to their pages
+5. Extracts embedded PNGs (>100x100)
+6. Exports .md + images to `exported_md/` (Notebook/Section/ directory structure)
+7. Generates index.md directory listing
 
 ```bash
-python3 extract_all.py
+uv run python scripts/extract_md.py
 ```
 
-無外部依賴，僅需 Python 3 標準函式庫。
+No external dependencies, only Python 3 standard library.
 
-### `export_markdown.py` — 早期版本：純文字匯出
+### `export_pdf.py` — PDF Exporter
 
-從 FTSI SQLite 匯出 Markdown（不含圖片）。這是 `extract_all.py` 的前身，僅做 Step 1 + 文字匯出。
+Reads the exported Markdown + images from `exported_md/` and converts each page to a styled PDF:
 
-### `extract_images.py` — 早期版本：暴力圖片提取
+- Uses weasyprint with HTML as intermediate format
+- Font: Noto Sans CJK TC (Traditional Chinese)
+- Interleaves images among text blocks
+- Outputs to `exported_pdf/`, preserving Notebook/Section directory structure
 
-掃描所有 .bin 檔的 magic bytes，切割出所有 PNG/JPEG/GIF/PDF/BMP 到 `_attachments/`。不區分圖片歸屬。已被 `extract_all.py` 的循序配置取代。
+```bash
+# Export all pages
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run python scripts/export_pdf.py
 
-### `generate_index.py` — 早期版本：索引產生
+# Export a specific page
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run python scripts/export_pdf.py --page "page name"
 
-從已匯出的目錄結構產生 index.md。已整合進 `extract_all.py`。
+# Test with first N pages
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run python scripts/export_pdf.py --test 5
+```
 
-## 封存工具（archive/）
+Dependencies: weasyprint (`uv add weasyprint`), Noto Sans CJK TC font (`brew install --cask font-noto-sans-cjk-tc`)
 
-`archive/` 包含 29 個開發過程中的實驗性程式：
+### Legacy Scripts (kept for reference)
 
-### PDF UI 自動化匯出（失敗）
+- `export_markdown.py` — Predecessor of `extract_md.py`, text-only export (no images)
+- `extract_images.py` — Brute-force image extraction via magic bytes scanning. Superseded by `extract_md.py`'s sequential allocation
+- `generate_index.py` — Standalone index generator, now integrated into `extract_md.py`
 
-嘗試透過 AppleScript + Accessibility API 控制 OneNote 自動匯出 PDF：
+## Archived Tools (`archive/`)
 
-- `export_pdf.py` — 初版完整自動化（notebook/section 切換失敗）
-- `export_pdf_v2.py` ~ `export_pdf_v11.py` — 多次迭代嘗試修復
-- `export_pdf_simple.py` — 簡化版（放棄 notebook 切換，僅 Cmd+PageDown）
-- `export_pdf_blind.py` — 盲操作版
-- `export_pdf_applescript.sh` — 純 AppleScript 版
+`archive/` contains 29 experimental scripts from the development process:
 
-失敗原因：OneNote Mac 的 sidebar UI 元素路徑在操作後會改變，無法穩定定位。
+### PDF UI Automation Export (Failed)
 
-### UI 偵錯工具
+Attempted to automate OneNote PDF export via AppleScript + Accessibility API:
 
-開發 PDF 自動化時用來分析 OneNote 的 Accessibility 樹：
+- `export_pdf.py` — Initial full automation (notebook/section switching failed)
+- `export_pdf_v2.py` ~ `export_pdf_v11.py` — Multiple iteration attempts
+- `export_pdf_simple.py` — Simplified version (gave up notebook switching, Cmd+PageDown only)
+- `export_pdf_blind.py` — Blind operation version
+- `export_pdf_applescript.sh` — Pure AppleScript version
 
-- `inspect_ui.py`, `hunt_ui.py`, `find_ui_lists.py` — 搜尋 UI 元素
-- `check_group5.py`, `inspect_child5.py`, `search_every_group.py` — 深度搜尋
-- `debug_dialog.py`, `inspect_dialog.py` — Save As 對話框偵錯
-- `debug_title.py`, `get_geometry.py` — 視窗標題/位置
-- `auto_diagnose.py`, `diagnose_save.py` — 自動診斷
-- `test_onenote.py`, `test_click.py`, `trace_test.py` — 操作測試
-- `find_page_list.py` — 嘗試定位頁面列表
+Failed because OneNote Mac's sidebar UI element paths change after interaction, making stable targeting impossible.
+
+### UI Debugging Tools
+
+Used to analyze OneNote's Accessibility tree during PDF automation development:
+
+- `inspect_ui.py`, `hunt_ui.py`, `find_ui_lists.py` — UI element search
+- `check_group5.py`, `inspect_child5.py`, `search_every_group.py` — Deep search
+- `debug_dialog.py`, `inspect_dialog.py` — Save As dialog debugging
+- `debug_title.py`, `get_geometry.py` — Window title/position
+- `auto_diagnose.py`, `diagnose_save.py` — Auto diagnostics
+- `test_onenote.py`, `test_click.py`, `trace_test.py` — Operation tests
+- `find_page_list.py` — Page list location attempts
