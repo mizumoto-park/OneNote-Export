@@ -12,7 +12,8 @@ Extracts all pages from the OneNote macOS local cache into structured Markdown f
 4. Sequential allocation mapping: assigns images to their pages
 5. Extracts embedded PNGs (>100x100)
 6. Exports .md + images to `exported_md/` (Notebook/Section/ directory structure)
-7. Generates index.md directory listing
+7. Saves any cache images that could not be linked to a page into `exported_md/_unlinked_images/` with a manifest (recent OneNote versions bulk-download media after the pages, so cache order no longer identifies the owner)
+8. Generates index.md directory listing
 
 ```bash
 uv run python scripts/extract_md.py

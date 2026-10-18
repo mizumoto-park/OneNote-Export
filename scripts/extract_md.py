@@ -16,6 +16,7 @@ import os
 import sys
 import re
 import json
+import time
 import sqlite3
 import struct
 import uuid
@@ -102,16 +103,30 @@ def sanitize_filename(name):
     return name
 
 
-def get_png_dimensions(filepath):
-    """Get PNG image dimensions."""
+def get_image_dimensions(ext, data):
+    """Return (width, height) for PNG/JPEG bytes, else (None, None)."""
     try:
-        with open(filepath, 'rb') as f:
-            header = f.read(24)
-        if header[:8] == b'\x89PNG\r\n\x1a\n':
-            w = struct.unpack('>I', header[16:20])[0]
-            h = struct.unpack('>I', header[20:24])[0]
-            return w, h
-    except:
+        if ext == 'png' and data[:8] == b'\x89PNG\r\n\x1a\n' and len(data) >= 24:
+            return struct.unpack('>II', data[16:24])
+        if ext == 'jpg' and data[:3] == b'\xff\xd8\xff':
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                              0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    h, w = struct.unpack('>HH', data[i + 5:i + 9])
+                    return w, h
+                if marker == 0xD8 or marker == 0x01 or 0xD0 <= marker <= 0xD7:
+                    i += 2
+                    continue
+                seglen = struct.unpack('>H', data[i + 2:i + 4])[0]
+                if seglen < 2:
+                    return None, None
+                i += 2 + seglen
+    except Exception:
         pass
     return None, None
 
@@ -317,7 +332,7 @@ def extract_embedded_pngs(page_data):
 
 
 # === Step 6: Write output ===
-def export_pages(pages, page_bins):
+def export_pages(pages, page_bins, file_index):
     """Export all matched pages to the output directory."""
     print(f"Exporting to {OUTPUT_DIR}...")
 
@@ -327,8 +342,11 @@ def export_pages(pages, page_bins):
         'skipped_no_bin': 0,
         'total_images': 0,
         'total_embedded_pngs': 0,
+        'unlinked_images': 0,
         'notebooks': defaultdict(lambda: defaultdict(int)),
     }
+
+    used_image_paths = set()
 
     # Build page_bins lookup by matched page goid
     bin_lookup = {}
@@ -378,6 +396,7 @@ def export_pages(pages, page_bins):
                 img_fname = f"image_{idx:03d}.{ext}"
                 dst = os.path.join(img_dir, img_fname)
                 shutil.copy2(img['filepath'], dst)
+                used_image_paths.add(img['filepath'])
                 image_files.append(f"{title}_images/{img_fname}")
                 stats['total_images'] += 1
 
@@ -405,6 +424,41 @@ def export_pages(pages, page_bins):
         _write_markdown(md_path, page, image_files, embedded_pngs, title)
         stats['exported'] += 1
         stats['notebooks'][nb][sec] += 1
+
+    # Images the cache could not link to any page. Current OneNote versions
+    # bulk-download media after the pages, so sequential cache order no longer
+    # identifies the owning page — preserve them in a recoverable pool instead
+    # of dropping them.
+    unlinked = [f for f in file_index
+                if f['type'] == 'IMAGE' and f['filepath'] not in used_image_paths]
+    if unlinked:
+        pool_dir = os.path.join(OUTPUT_DIR, "_unlinked_images")
+        os.makedirs(pool_dir, exist_ok=True)
+        manifest = [
+            "# Unlinked cache images",
+            "",
+            "Images found in the OneNote cache that could not be attributed",
+            "to a page: this OneNote version downloads media in bulk after the",
+            "pages, so cache file order no longer identifies the owner.",
+            "",
+            "| file | format | dimensions | bytes | cached at |",
+            "|---|---|---|---|---|",
+        ]
+        for img in sorted(unlinked, key=lambda x: x['fid']):
+            with open(img['filepath'], 'rb') as f:
+                data = f.read()
+            w, h = get_image_dimensions(img['ext'], data)
+            fname = f"cache_{img['fid']}.{img['ext'] or 'bin'}"
+            shutil.copy2(img['filepath'], os.path.join(pool_dir, fname))
+            cached_at = time.strftime('%Y-%m-%d %H:%M',
+                                      time.localtime(os.path.getmtime(img['filepath'])))
+            dims = f"{w}x{h}" if w else "-"
+            manifest.append(f"| {fname} | {img['ext'] or '?'} | {dims} | {img['size']:,} | {cached_at} |")
+            stats['unlinked_images'] += 1
+        with open(os.path.join(pool_dir, "manifest.md"), 'w', encoding='utf-8') as f:
+            f.write("\n".join(manifest) + "\n")
+        print(f"  Unlinked images: {stats['unlinked_images']} "
+              f"(saved to _unlinked_images/, see manifest.md)")
 
     return stats
 
@@ -460,6 +514,9 @@ def generate_index(pages, stats):
     lines.append(f"Exported {stats['exported']} pages, "
                  f"{stats['total_images']} sequential images, "
                  f"{stats['total_embedded_pngs']} embedded images")
+    if stats.get('unlinked_images'):
+        lines.append(f"({stats['unlinked_images']} cache images could not be linked to a "
+                     f"page — saved in [_unlinked_images/](_unlinked_images/), see its manifest.md)")
     if stats['skipped_no_bin']:
         lines.append(f"({stats['skipped_no_bin']} pages had no cache bin file - text only)")
     lines.append("")
@@ -512,7 +569,7 @@ def main():
     print()
 
     # Step 5-6
-    stats = export_pages(pages, page_bins)
+    stats = export_pages(pages, page_bins, file_index)
     print()
 
     # Step 7
@@ -526,6 +583,7 @@ def main():
     print(f"  Pages exported:     {stats['exported']}")
     print(f"  Sequential images:  {stats['total_images']}")
     print(f"  Embedded images:    {stats['total_embedded_pngs']}")
+    print(f"  Unlinked images:    {stats['unlinked_images']} (_unlinked_images/)")
     print(f"  No cache bin file:  {stats['skipped_no_bin']} (text only)")
     print(f"  Output directory:   {OUTPUT_DIR}")
     print()
