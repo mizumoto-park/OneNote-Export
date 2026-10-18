@@ -6,10 +6,10 @@
 
 Extracts all pages from the OneNote macOS local cache into structured Markdown files with images:
 
-1. Loads 587 pages from FTSI SQLite databases (Notebook/Section/Page hierarchy)
-2. Classifies 2,039 cache .bin files (IMAGE vs DATA)
-3. GUID byte matching: FTSI pages to cache .bin files (94.9% match rate)
-4. Sequential allocation mapping: assigns 1,246 images to their pages
+1. Auto-discovers the OneNote data dir (`$ONENOTE_BASE` override, else the standard Mac container) and every notebook DB in `FullTextSearchIndex/` — notebook names are read from the databases, nothing is hardcoded
+2. Classifies the cache `.bin` files (IMAGE vs DATA)
+3. GUID byte matching: FTSI pages to cache `.bin` files
+4. Sequential allocation mapping: assigns images to their pages
 5. Extracts embedded PNGs (>100x100)
 6. Exports .md + images to `exported_md/` (Notebook/Section/ directory structure)
 7. Generates index.md directory listing

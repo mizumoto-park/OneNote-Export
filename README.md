@@ -41,6 +41,8 @@ See [docs/](docs/) for detailed technical documentation on the cache format, GUI
 
 ## 🚀 Usage
 
+Notebooks are **auto-discovered** at runtime from OneNote's local cache — no per-user configuration. Set `ONENOTE_BASE` only if your data lives outside the standard app container.
+
 ### Export Markdown
 
 ```bash

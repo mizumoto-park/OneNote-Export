@@ -24,22 +24,21 @@ from collections import defaultdict
 from pathlib import Path
 
 # === Configuration ===
-ONENOTE_BASE = os.path.expanduser(
-    "~/Library/Containers/com.microsoft.onenote.mac/Data/Library/"
-    "Application Support/Microsoft User Data/OneNote/15.0"
-)
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(PROJECT_DIR, "exported_md")
+
+from onenote_source import find_onenote_base, discover_notebooks, connect_ro
+
+ONENOTE_BASE = find_onenote_base()
 CACHE_DIR = os.path.join(ONENOTE_BASE, "cache")
 DB_DIR = os.path.join(ONENOTE_BASE, "FullTextSearchIndex")
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exported_md")
 
-# Notebook databases
-NOTEBOOKS = [
-    ("{3DBD86EA-D2F6-7343-AC97-863B47D29236}{19}.db", "Work"),
-    ("{D62C1D86-38B0-0B4C-9A45-7259DDD20395}{51}.db", "Personal"),
-    ("{248E7F28-E3C6-AC43-A45F-8A5936C978E7}{10}.db", "Evernote"),
-    ("{D62C1D86-38B0-0B4C-9A45-7259DDD20395}{10}.db", "Morton Rainey"),
-    ("{5497DFA7-B4A4-EC49-95F1-9B049B091C4E}{10}.db", "7rendMicro"),
-]
+# Notebooks discovered at runtime: every DB in DB_DIR holding a notebook
+# entity (Type=4); the display name is read from the database itself.
+NOTEBOOKS = discover_notebooks(DB_DIR)
+
+if not NOTEBOOKS:
+    raise SystemExit(f"No notebook databases found in {DB_DIR}")
 
 # Image file signatures
 IMAGE_SIGNATURES = {
@@ -129,7 +128,7 @@ def load_ftsi_pages():
             print(f"  WARNING: DB not found: {db_file}")
             continue
 
-        conn = sqlite3.connect(db_path)
+        conn = connect_ro(db_path)
 
         # Build section lookup
         sections = {}

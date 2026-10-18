@@ -2,11 +2,11 @@
 """
 OneNote Exported Markdown → PDF Converter (Plan B: Flow Layout)
 
-Reads the already-exported Markdown + images from exported/ and converts
+Reads the already-exported Markdown + images from exported_md/ and converts
 each page to a styled PDF using HTML as an intermediate format.
 
-Text order follows the .bin binary's visual order (top-to-bottom).
-Images are inserted between text blocks at approximate positions.
+Text order is the order stored in the FTSI database (by the markdown export).
+Images are inserted between text blocks at evenly spaced positions.
 
 Dependencies: weasyprint (install via: uv add weasyprint)
 Run: DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run python scripts/export_pdf.py
@@ -14,11 +14,6 @@ Run: DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run python scripts/export_p
 
 import os
 import re
-import sys
-import glob
-import struct
-import uuid
-import sqlite3
 from pathlib import Path
 from html import escape
 
@@ -29,23 +24,6 @@ weasyprint = None
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 EXPORTED_DIR = os.path.join(PROJECT_DIR, "exported_md")
-
-ONENOTE_BASE = os.path.expanduser(
-    "~/Library/Containers/com.microsoft.onenote.mac/Data/Library/"
-    "Application Support/Microsoft User Data/OneNote/15.0"
-)
-CACHE_DIR = os.path.join(ONENOTE_BASE, "cache")
-DB_DIR = os.path.join(ONENOTE_BASE, "FullTextSearchIndex")
-
-NOTEBOOKS = [
-    ("{3DBD86EA-D2F6-7343-AC97-863B47D29236}{19}.db", "Work"),
-    ("{D62C1D86-38B0-0B4C-9A45-7259DDD20395}{51}.db", "Personal"),
-    ("{248E7F28-E3C6-AC43-A45F-8A5936C978E7}{10}.db", "Evernote"),
-    ("{D62C1D86-38B0-0B4C-9A45-7259DDD20395}{10}.db", "Morton Rainey"),
-    ("{5497DFA7-B4A4-EC49-95F1-9B049B091C4E}{10}.db", "7rendMicro"),
-]
-
-PAGE_TITLE_MARKER = "PageTitle".encode('utf-16-le')
 
 # CSS for PDF rendering
 PAGE_CSS = """
@@ -142,149 +120,6 @@ table th {
     color: #999;
 }
 """
-
-
-def parse_bin_text_segments(bin_path):
-    """
-    Extract UTF-16LE text segments from a page .bin file in order.
-    Returns list of strings in the order they appear in the binary
-    (which reflects the visual top-to-bottom, left-to-right layout).
-    """
-    try:
-        with open(bin_path, 'rb') as f:
-            data = f.read()
-    except:
-        return []
-
-    segments = []
-    # Match runs of printable ASCII + common CJK as UTF-16LE (at least 2 chars)
-    # UTF-16LE pattern: printable_byte 0x00 repeated
-    i = 0
-    while i < len(data) - 3:
-        # Look for start of UTF-16LE text (printable char followed by 0x00)
-        if data[i + 1] == 0x00 and 0x20 <= data[i] <= 0x7e:
-            # Found potential UTF-16LE start, scan forward
-            end = i
-            while end < len(data) - 1:
-                lo, hi = data[end], data[end + 1]
-                # Accept: ASCII printable, CJK ranges, common symbols
-                if hi == 0x00 and (0x20 <= lo <= 0x7e):  # ASCII
-                    end += 2
-                elif hi >= 0x4e and hi <= 0x9f:  # CJK Unified
-                    end += 2
-                elif hi >= 0x30 and hi <= 0x33:  # CJK compatibility, kana, etc.
-                    end += 2
-                elif hi >= 0x00 and lo >= 0x80 and hi <= 0x04:  # Latin extended
-                    end += 2
-                elif hi == 0x20 and lo >= 0x00:  # General punctuation
-                    end += 2
-                elif hi == 0xff and lo >= 0x01:  # Fullwidth forms
-                    end += 2
-                elif hi >= 0xac and hi <= 0xd7:  # Korean
-                    end += 2
-                else:
-                    break
-
-            byte_len = end - i
-            if byte_len >= 6:  # At least 3 chars
-                try:
-                    text = data[i:end].decode('utf-16-le').strip()
-                    # Filter out known metadata strings
-                    if (text and len(text) >= 2
-                            and text not in ('PageTitle', 'PageDateTime',
-                                             'Untitled picture.png')
-                            and not text.startswith('Calibri')
-                            and not text.startswith('{')  # GUIDs
-                            and 'cid:image' not in text.lower()
-                            and 'windowslive' not in text.lower()):
-                        segments.append(text)
-                except:
-                    pass
-            i = end
-        else:
-            i += 1
-
-    return segments
-
-
-def guid_to_bytes_le(guid_str):
-    """Convert GUID string to mixed-endian (little-endian) bytes."""
-    g = guid_str.strip('{}')
-    return uuid.UUID(g).bytes_le
-
-
-def build_page_bin_map():
-    """Build a map from FTSI page GUID → cache .bin filepath."""
-    print("Building page → bin file map...")
-    guid_to_bin = {}
-
-    # Collect all page bins
-    page_bins = []
-    for fname in sorted(os.listdir(CACHE_DIR)):
-        if not fname.endswith('.bin'):
-            continue
-        fpath = os.path.join(CACHE_DIR, fname)
-        if os.path.getsize(fpath) < 4096:
-            continue
-        try:
-            with open(fpath, 'rb') as f:
-                header = f.read(65536)
-            if PAGE_TITLE_MARKER in header:
-                page_bins.append(fpath)
-        except:
-            pass
-
-    # Load GUIDs from FTSI
-    page_guids = {}  # guid_bytes → (notebook, section, title, guid_str)
-    for db_file, nb_name in NOTEBOOKS:
-        db_path = os.path.join(DB_DIR, db_file)
-        if not os.path.exists(db_path):
-            continue
-        conn = sqlite3.connect(db_path)
-        sections = {}
-        for row in conn.execute("SELECT GOID, Title FROM Entities WHERE Type = 2"):
-            sections[row[0]] = row[1]
-        for row in conn.execute(
-            "SELECT GUID, ParentGOID, Title FROM Entities WHERE Type = 1"
-        ):
-            guid_str, parent_goid, title = row
-            sec = sections.get(parent_goid, "Unknown")
-            try:
-                gb = guid_to_bytes_le(guid_str)
-                page_guids[gb] = (nb_name, sec, title or "Untitled", guid_str)
-            except:
-                pass
-        conn.close()
-
-    # Match
-    for bin_path in page_bins:
-        with open(bin_path, 'rb') as f:
-            data = f.read()
-        for gb, info in page_guids.items():
-            if gb in data:
-                nb, sec, title, guid_str = info
-                key = (nb, sec, title)
-                guid_to_bin[key] = bin_path
-                break
-
-    print(f"  Matched {len(guid_to_bin)} pages to bin files")
-    return guid_to_bin
-
-
-def detect_table_data(texts):
-    """
-    Try to detect tabular data from text segments.
-    Returns (is_table, headers, rows) if it looks like a table.
-    """
-    if len(texts) < 6:
-        return False, [], []
-
-    # Check if many consecutive segments are short and could be table cells
-    short_count = sum(1 for t in texts if len(t) < 30)
-    if short_count / len(texts) < 0.6:
-        return False, [], []
-
-    return False, [], []
 
 
 def texts_to_html_blocks(texts, title):
@@ -482,7 +317,7 @@ def parse_exported_md(md_path):
     }
 
 
-def convert_page_to_pdf(md_path, page_bin_map):
+def convert_page_to_pdf(md_path):
     """Convert a single exported page (.md + images) to PDF."""
     global weasyprint
     if weasyprint is None:
@@ -545,10 +380,6 @@ def main():
     print("=" * 60)
     print()
 
-    # Build bin map for better text ordering
-    page_bin_map = build_page_bin_map()
-    print()
-
     # Find all md files
     md_files = find_all_md_files()
     print(f"Found {len(md_files)} markdown files")
@@ -570,7 +401,7 @@ def main():
     for i, md_path in enumerate(md_files, 1):
         rel_path = os.path.relpath(md_path, EXPORTED_DIR)
         try:
-            pdf_path = convert_page_to_pdf(md_path, page_bin_map)
+            pdf_path = convert_page_to_pdf(md_path)
             success += 1
             if i <= 5 or i % 50 == 0:
                 pdf_size = os.path.getsize(pdf_path)
